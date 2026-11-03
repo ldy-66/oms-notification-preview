@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Custom / Trader 集成原型预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; color: #243247; background: #eef2f7; font-family: Inter, "Microsoft YaHei", Arial, sans-serif; }
+    .topbar { min-height: 64px; display: flex; align-items: center; gap: 24px; padding: 0 20px; background: #fff; border-bottom: 1px solid #dfe5ec; box-shadow: 0 1px 4px rgba(28,48,72,.05); z-index: 2; }
+    .brand { min-width: 220px; display: flex; align-items: center; gap: 10px; }
+    .mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: #2d78e8; font-size: 12px; font-weight: 700; letter-spacing: -.5px; }
+    .brand-copy { display: grid; gap: 3px; }
+    .brand-copy strong { font-size: 14px; font-weight: 700; }
+    .brand-copy small { color: #7a8797; font-size: 10px; }
+    nav { display: flex; align-items: center; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+    nav::-webkit-scrollbar { display: none; }
+    .tab { flex: none; height: 34px; padding: 0 12px; border: 1px solid transparent; border-radius: 6px; color: #59687b; background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+    .tab:hover { color: #1e63c4; background: #f3f7fd; }
+    .tab.active { color: #1e63c4; background: #eaf2ff; border-color: #d8e7ff; font-weight: 600; }
+    .divider { width: 1px; height: 22px; flex: none; margin: 0 3px; background: #e3e8ef; }
+    .scope { margin-left: auto; flex: none; padding: 6px 9px; border: 1px solid #e2e8f0; border-radius: 999px; color: #718096; background: #f8fafc; font-size: 10px; }
+    main { min-height: 0; flex: 1; }
+    iframe { width: 100%; height: 100%; display: block; border: 0; background: #f4f6f8; }
+    @media(max-width:1050px) { .topbar { gap: 10px; padding: 0 10px; } .brand { min-width: 180px; } .scope { display: none; } .tab { padding: 0 9px; } }
+    @media(max-width:700px) { .topbar { align-items: flex-start; flex-direction: column; gap: 7px; padding: 8px 10px; } .brand { min-width: 0; } nav { width: 100%; } main { min-height: 420px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">UI</span>
+      <div class="brand-copy">
+        <strong>双端原型 · 集成预览</strong>
+        <small>Custom / Trader · 当前任务组合效果</small>
+      </div>
+    </div>
+    <nav aria-label="原型切换">
+      <button class="tab active" type="button" data-src="custom/index.html">Custom 集成</button>
+      <button class="tab" type="button" data-src="trader/index.html">Trader 集成</button>
+      <span class="divider" aria-hidden="true"></span>
+      <button class="tab" type="button" data-src="custom/prototypes/CLOUD-743-wheel-protection.html">Custom 滚轮保护</button>
+      <button class="tab" type="button" data-src="custom/prototypes/system-settings-notifications.html">Custom 系统设置</button>
+      <button class="tab" type="button" data-src="trader/prototypes/system-settings-notifications.html">Trader 系统设置</button>
+    </nav>
+    <div id="noticeDemo">
+      <select id="noticeSample" aria-label="消息样例">
+        <option>母单拒单</option><option>子单拒单</option><option>沪深休市</option><option>港股休市</option><option>美股休市</option><option>触发风控线</option><option>单笔成交</option>
+      </select>
+      <button class="tab" id="sendNoticeSample" type="button">触发样例</button>
+    </div>
+  </header>
+  <main><iframe id="previewFrame" title="原型预览" src="custom/index.html"></iframe></main>
+  <script>
+    const frame = document.querySelector("#previewFrame");
+    const tabs = [...document.querySelectorAll(".tab[data-src]")];
+    document.querySelector("#sendNoticeSample").addEventListener("click", () => {
+      frame.contentWindow.postMessage({type:"oms-notice-sample", title:document.querySelector("#noticeSample").value}, "*");
+    });
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      tabs.forEach(item => item.classList.toggle("active", item === tab));
+      frame.src = tab.dataset.src;
+      document.querySelector("#noticeDemo").hidden = !/^(trader|custom)\/index\.html$/.test(tab.dataset.src);
+    }));
+  </script>
+</body>
+</html>
