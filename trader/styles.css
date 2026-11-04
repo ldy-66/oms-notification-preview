@@ -441,4 +441,4 @@ button { cursor: pointer; }
 .business-notice-popup button { margin-left:auto; border:0; background:transparent; color:#677582; cursor:pointer; }
 .has-pending-reminder .business-notice-popup { top:106px; }
 
-.notification-subfilters { flex-wrap:wrap; }
+.notification-subfilters { height:auto; min-height:40px; padding-block:7px; flex-wrap:wrap; }
