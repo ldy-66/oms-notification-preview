@@ -139,7 +139,7 @@ notificationLayer.addEventListener("click", event => {
   if (target?.closest("#openFullNotifications")) {
     state.notificationOpen = false;
     renderNotificationCenter();
-    openNotificationWindow("全部消息");
+    fullMessages.open();
     return;
   }
   const filterButton = target?.closest("[data-notification-filter]");
@@ -226,23 +226,12 @@ function renderPendingTaskReminder() {
   }
   const { row, index } = tasks[0];
   const extra = tasks.length > 1 ? `，另有 ${tasks.length - 1} 笔` : "";
-  pendingTaskReminder.innerHTML = `<div class="pending-task-card"><span class="pending-task-icon">i</span><span class="pending-task-copy"><span class="pending-task-title">HighTouch 待确认订单${tasks.length > 1 ? `（${tasks.length}）` : ""}</span><span class="pending-task-summary">${row[3]} · ${row[5]} · ${row[0]}${extra}</span></span><button class="pending-task-action" data-open-pending-order="${index}" type="button">前往处理</button></div>`;
-  pendingTaskReminder.querySelector("[data-open-pending-order]").addEventListener("click", () => openNotificationWindow("待确认"));
+  pendingTaskReminder.innerHTML = `<div class="pending-task-card"><span class="pending-task-icon">i</span><span class="pending-task-copy"><span class="pending-task-title">HighTouch 待确认订单${tasks.length > 1 ? `（${tasks.length}）` : ""}</span><span class="pending-task-summary">${row[3]} · ${row[5]} · ${row[0]}${extra}</span></span><button class="pending-task-action" data-open-pending-order="${index}" type="button">${tasks.length === 1 ? "前往处理" : "查看待确认"}</button></div>`;
+  pendingTaskReminder.querySelector("[data-open-pending-order]").addEventListener("click", () => tasks.length === 1 ? goToTraderOrder({orderRef:row}) : fullMessages.open("订单", MessageCenter.pending));
 }
 
 function visibleNotifications() {
-  let rows = state.notificationFilter === "全部"
-    ? notificationRows
-    : notificationRows.filter(item => item.category === state.notificationFilter);
-  if (state.notificationFilter === "订单" && state.notificationSubFilter !== "全部") {
-    rows = state.notificationSubFilter === "拒单"
-      ? rows.filter(item => item.event === "拒单")
-      : rows.filter(item => item.orderLevel === state.notificationSubFilter);
-  }
-  if (state.notificationFilter === "市场" && state.notificationSubFilter !== "全部") {
-    rows = rows.filter(item => item.market === state.notificationSubFilter);
-  }
-  return rows;
+  return MessageCenter.list(notificationRows, state.notificationFilter, state.notificationSubFilter);
 }
 
 function notificationMeta(item) {
@@ -274,11 +263,7 @@ function renderNotificationCenter() {
     ? notificationRows.length
     : notificationRows.filter(item => item.category === category).length;
   const filterMarkup = `<div class="notification-filters">${filters.map(filter => `<button class="notification-filter ${filter === state.notificationFilter ? "active" : ""}" data-notification-filter="${filter}" type="button">${filter} ${categoryCount(filter)}</button>`).join("")}</div>`;
-  const subfilterOptions = state.notificationFilter === "订单"
-    ? [["全部", "全部订单"], ["母单", "母单"], ["子单", "子单"], ["拒单", "拒单提示"]]
-    : state.notificationFilter === "市场"
-      ? [["全部", "全部市场"], ["沪深", "沪深"], ["港股", "港股"], ["美股", "美股"]]
-      : [];
+  const subfilterOptions = MessageCenter.filters(state.notificationFilter, true);
   const currentSubfilterLabel = subfilterOptions.find(([value]) => value === state.notificationSubFilter)?.[1] || subfilterOptions[0]?.[1] || "";
   const subfilterMarkup = subfilterOptions.length
     ? `<div class="notification-subfilters">${subfilterOptions.map(([value, label]) => `<button class="notification-subfilter ${value === state.notificationSubFilter ? "active" : ""}" data-notification-subfilter="${value}" aria-pressed="${value === state.notificationSubFilter}" type="button">${label}</button>`).join("")}<span class="notification-filter-current">当前筛选：${currentSubfilterLabel}</span></div>`
@@ -295,7 +280,7 @@ function renderNotificationCenter() {
         <p class="notification-detail-body">${selected.body}</p>
         <div class="notification-meta">${notificationMeta(selected).map(value => `<span>${value ?? "--"}</span>`).join("")}</div>
       </div>
-      ${selected.category === "订单" ? `<footer class="notification-detail-actions"><button class="btn primary" id="openRelatedOrder" type="button">查看相关订单</button></footer>` : ""}
+      ${traderOrderAction(selected) ? `<footer class="notification-detail-actions"><button class="btn primary" id="openRelatedOrder" type="button">${traderOrderAction(selected)}</button></footer>` : ""}
     </section>`;
     notificationLayer.querySelector("#backToNotificationList")?.addEventListener("click", () => {
       state.notificationPage = "list";
@@ -311,26 +296,32 @@ function renderNotificationCenter() {
         <span class="notification-copy"><span class="notification-title-row"><span class="notification-title">${item.title}</span><span class="notification-status">${item.category === "订单" ? `${item.orderLevel} · ${item.event}` : item.category === "市场" ? `${item.market} · ${item.event}` : item.event}</span></span><span class="notification-summary">${item.summary}</span></span>
         <span class="notification-time">${item.time}</span>
       </button>`).join("") : `<div class="notification-empty">当前分类暂无消息</div>`}</div>
-      <footer class="notification-footer"><button id="openFullNotifications" type="button">查看全部消息 ›</button></footer>
+      <footer class="notification-footer"><button id="openFullNotifications" type="button">全部消息 ›</button></footer>
     </section>`;
 
   }
 
-  notificationLayer.querySelector("#openRelatedOrder")?.addEventListener("click", () => {
-    const selected = notificationRows.find(item => item.id === state.selectedNotification);
-    state.notificationOpen = false;
-    if (selected?.orderRef) {
-      state.orderAttributeFilter = "";
-      state.orderAttributeDraft = "";
-      state.view = "orders";
-      state.selectedOrder = orderRows.indexOf(selected.orderRef);
-      render();
-      return;
-    }
-    navigate("orders");
-    notify("已定位至相关订单列表（原型）");
-  });
+  notificationLayer.querySelector("#openRelatedOrder")?.addEventListener("click", () => goToTraderOrder(selected));
 }
+
+function traderOrderAction(item) {
+  if (!item?.orderRef || !orderRows.includes(item.orderRef)) return "";
+  return item.orderRef[1] === "待确认" && item.orderRef[6] === "HighTouch" ? "前往处理" : "查看相关订单";
+}
+
+function goToTraderOrder(item) {
+  const index = orderRows.indexOf(item?.orderRef);
+  if (index < 0) { notify("找不到关联订单"); return false; }
+  state.notificationOpen = false;
+  state.orderAttributeFilter = "";
+  state.orderAttributeDraft = "";
+  state.view = "orders";
+  state.selectedOrder = index;
+  render();
+  workspace.querySelector(`[data-order-row="${index}"]`)?.scrollIntoView({block:"nearest"});
+  return true;
+}
+
 function marketView() {
   return `<section class="view with-trade-panel market-view">
     <div class="main-column">
@@ -807,7 +798,7 @@ function bindInteractions() {
     render();
     notify(`筛选完成，共 ${matchingIndexes.length} 条委托`);
   });
-  document.querySelectorAll("[data-approve-order]").forEach(btn => btn.addEventListener("click", (event) => { event.stopPropagation(); const index=Number(btn.dataset.approveOrder); orderRows[index][1] = "已确认"; state.selectedOrder=index; render(); notify("订单已确认，可选择直接下单或拆单"); }));
+  document.querySelectorAll("[data-approve-order]").forEach(btn => btn.addEventListener("click", (event) => { event.stopPropagation(); const index=Number(btn.dataset.approveOrder); orderRows[index][1] = "已确认"; state.selectedOrder=index; render(); fullMessages.refresh(); notify("订单已确认，可选择直接下单或拆单"); }));
   document.querySelectorAll("[data-direct-order]").forEach(btn => btn.addEventListener("click", (event) => { event.stopPropagation(); state.modal={type:"direct-order",index:Number(btn.dataset.directOrder)}; render(); }));
   document.querySelectorAll("[data-split-order]").forEach(btn => btn.addEventListener("click", (event) => { event.stopPropagation(); state.modal={type:"split-order",index:Number(btn.dataset.splitOrder)}; render(); }));
   document.querySelectorAll("[data-manual-fill]").forEach(btn => btn.addEventListener("click", () => { const [parent,child]=btn.dataset.manualFill.split(":").map(Number); const row=childOrders[parent]?.[child]; if(!row?.manual) return notify("电子子单已发起撤单演示"); state.modal={type:"manual-fill",index:parent,child}; render(); }));
@@ -840,6 +831,7 @@ function bindInteractions() {
     state.view = "orders";
     state.selectedOrder = 0;
     render();
+    fullMessages.refresh();
   });
 }
 
@@ -861,81 +853,24 @@ function notify(message) {
 
 render();
 
-// 完整消息窗口复用标题栏的通知数据与订单待办。
-const notificationWindow = document.createElement("section");
-notificationWindow.className = "notice-window";
-notificationWindow.hidden = true;
-notificationWindow.setAttribute("aria-label", "消息通知");
-document.querySelector(".app-shell").appendChild(notificationWindow);
-const noticeState = { category: "订单", view: "异常反馈", level: "全部", keyword: "", date: "", detailId: null };
-const escapeNotice = value => String(value ?? "--").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-
-function openNotificationWindow(view = "全部消息") {
-  state.notificationOpen = false;
-  renderNotificationCenter();
-  Object.assign(noticeState, { category: "订单", view, level: "全部", keyword: "", date: "", detailId: null });
-  notificationWindow.hidden = false;
-  renderNoticeWindow();
-}
-
 const anomalyKey = "oms.notice.trader.anomalies";
 let storedAnomalies = [];
 try { storedAnomalies = JSON.parse(localStorage.getItem(anomalyKey)) || []; } catch {}
 const anomalyFeedback = [...storedAnomalies, ...notificationRows.filter(item => item.event === "拒单")];
+const fullMessages = MessageCenter.create({
+  rows:notificationRows, meta:notificationMeta, onRead:renderNotificationCenter,
+  orderAction:traderOrderAction, goToOrder:goToTraderOrder, archiveRows:() => anomalyFeedback,
+  pendingRows:() => orderRows.flatMap((row,index) => {
+    if (row[1] !== "待确认" || row[6] !== "HighTouch") return [];
+    return [notificationRows.find(item => item.orderRef === row) || orderNotice(row,true,-index-1)];
+  }),
+});
+
 NoticeChannels.bindSamples(noticeChannels, notificationRows, () => {
   renderNotificationCenter();
-  if (!notificationWindow.hidden) renderNoticeWindow();
+  fullMessages.refresh();
 }, item => {
   anomalyFeedback.unshift(item);
   storedAnomalies.unshift(item);
   try { localStorage.setItem(anomalyKey, JSON.stringify(storedAnomalies)); } catch {}
 });
-
-function noticeRows() {
-  let rows = notificationRows.filter(item => noticeState.category === "全部" || item.category === noticeState.category);
-  if (noticeState.category === "订单" && noticeState.view === "异常反馈") rows = anomalyFeedback;
-  if (noticeState.category === "订单" && noticeState.view === "待确认") rows = orderRows.flatMap((row, index) => {
-    if (row[1] !== "待确认" || row[6] !== "HighTouch") return [];
-    return [notificationRows.find(item => item.orderRef === row) || orderNotice(row, true, -index - 1)];
-  });
-  if (noticeState.level !== "全部" && noticeState.category === "订单") rows = rows.filter(item => item.orderLevel === noticeState.level);
-  if (noticeState.keyword) {
-    const keyword = noticeState.keyword.toLowerCase();
-    rows = rows.filter(item => [item.account, item.order, item.parentOrder, item.childOrder, item.title, item.summary, item.rejectReason, item.orderRef?.[5]].some(value => String(value || "").toLowerCase().includes(keyword)));
-  }
-  const today = new Date().toLocaleDateString("sv-SE");
-  if (noticeState.date) rows = rows.filter(item => (item.date || today) === noticeState.date);
-  return rows;
-}
-
-function renderNoticeWindow() {
-  const unread = notificationRows.filter(item => item.unread).length;
-  const pending = orderRows.filter(row => row[1] === "待确认" && row[6] === "HighTouch").length;
-  const selected = noticeRows().find(item => item.id === noticeState.detailId);
-  const categories = ["全部", "订单", "市场", "风控", "系统"];
-  const tabs = ["全部消息", "异常反馈", "待确认"];
-  const rows = noticeRows();
-  const today = new Date().toLocaleDateString("sv-SE");
-  notificationWindow.innerHTML = `<header class="notice-window-head"><div><strong>消息通知</strong><span>${unread} 条未读</span></div><button type="button" data-notice-close aria-label="关闭">×</button></header>
-    <div class="notice-window-body"><nav class="notice-sidebar">${categories.map(category => `<button type="button" data-notice-category="${category}" class="${noticeState.category === category ? "active" : ""}">${category}${category === "订单" && pending ? `<span>${pending}</span>` : ""}</button>`).join("")}</nav>
-    <main class="notice-main">${selected ? `<div class="notice-detail-head"><button type="button" data-notice-back>‹ 返回列表</button><strong>消息详情</strong></div><div class="notice-detail-wrap"><span class="notification-icon ${escapeNotice(selected.level)}">${escapeNotice(selected.icon)}</span><div><h2>${escapeNotice(selected.title)}</h2><p class="notice-detail-sub">${escapeNotice(selected.orderLevel || selected.category)} · ${escapeNotice(selected.event)}　${escapeNotice(selected.date || today)} ${escapeNotice(selected.time)}</p><p>${escapeNotice(selected.body)}</p>${selected.rejectReason ? `<div class="notice-reason"><b>反馈原因</b><p>${escapeNotice(selected.rejectReason)}</p></div>` : ""}<div class="notice-detail-grid">${notificationMeta(selected).map(value => `<span>${escapeNotice(value)}</span>`).join("")}</div>${selected.orderRef ? `<button class="btn primary" type="button" data-notice-order="${orderRows.indexOf(selected.orderRef)}">查看相关订单</button>` : ""}</div></div>` : `<div class="notice-title"><div><h2>${noticeState.category === "订单" ? "订单消息" : `${noticeState.category}消息`}</h2><p>${noticeState.view === "待确认" && noticeState.category === "订单" ? `当前 ${pending} 笔待确认` : `共 ${rows.length} 条消息`}</p></div><button class="btn ghost" type="button" data-notice-read>全部已读</button></div>
-      ${noticeState.category === "订单" ? `<div class="notice-tabs">${tabs.map(tab => `<button type="button" data-notice-view="${tab}" class="${noticeState.view === tab ? "active" : ""}">${tab}${tab === "待确认" && pending ? ` <em>${pending}</em>` : ""}</button>`).join("")}</div>` : ""}
-      <div class="notice-query"><input type="date" id="noticeDate" value="${escapeNotice(noticeState.date)}" aria-label="消息日期"><select id="noticeLevel" aria-label="订单层级"><option value="全部" ${noticeState.level === "全部" ? "selected" : ""}>全部层级</option><option ${noticeState.level === "母单" ? "selected" : ""}>母单</option><option ${noticeState.level === "子单" ? "selected" : ""}>子单</option></select><input id="noticeKeyword" value="${escapeNotice(noticeState.keyword)}" placeholder="账号 / 订单号 / 标的 / 反馈内容"><button type="button" class="btn primary" data-notice-query>查询</button><button type="button" class="btn" data-notice-reset>重置</button><button type="button" class="btn notice-export" data-notice-export>导出</button></div>
-      <div class="notice-table-wrap"><table class="notice-table"><thead><tr><th>时间</th><th>类型</th><th>订单层级</th><th>资金账号</th><th>订单编号</th><th>反馈内容</th><th>操作</th></tr></thead><tbody>${rows.length ? rows.map(item => `<tr><td>${escapeNotice(item.date || today)} ${escapeNotice(item.time)}</td><td><span class="notice-event ${item.event === "拒单" ? "danger" : ""}">${escapeNotice(item.event)}</span></td><td>${escapeNotice(item.orderLevel || "--")}</td><td>${escapeNotice(item.account || "--")}</td><td>${escapeNotice(item.order || item.parentOrder || "--")}</td><td class="notice-reason-cell">${escapeNotice(item.rejectReason || item.summary)}</td><td><button type="button" data-notice-message="${item.id}">查看详情</button>${item.orderRef && item.orderRef[1] === "待确认" ? ` <button type="button" data-notice-order="${orderRows.indexOf(item.orderRef)}">前往处理</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="7" class="notice-empty">暂无符合条件的消息</td></tr>`}</tbody></table></div><div class="notice-count">共 ${rows.length} 条</div>`}</main></div>`;
-}
-
-notificationWindow.addEventListener("click", event => {
-  const target = event.target.closest("button");
-  if (!target) return;
-  if (target.hasAttribute("data-notice-close")) { notificationWindow.hidden = true; return; }
-  if (target.hasAttribute("data-notice-back")) { noticeState.detailId = null; renderNoticeWindow(); return; }
-  if (target.dataset.noticeCategory) { Object.assign(noticeState, { category: target.dataset.noticeCategory, view: "全部消息", level: "全部", keyword: "", date: "", detailId: null }); renderNoticeWindow(); return; }
-  if (target.dataset.noticeView) { noticeState.view = target.dataset.noticeView; noticeState.detailId = null; renderNoticeWindow(); return; }
-  if (target.dataset.noticeMessage) { const item = noticeRows().find(row => row.id === Number(target.dataset.noticeMessage)); if (item) { item.unread = false; noticeState.detailId = item.id; renderNotificationCenter(); renderNoticeWindow(); } return; }
-  if (target.hasAttribute("data-notice-read")) { notificationRows.forEach(item => { item.unread = false; }); renderNotificationCenter(); renderNoticeWindow(); return; }
-  if (target.dataset.noticeOrder !== undefined) { const index = Number(target.dataset.noticeOrder); if (index < 0 || !orderRows[index]) return; notificationWindow.hidden = true; state.orderAttributeFilter = ""; state.orderAttributeDraft = ""; state.view = "orders"; state.selectedOrder = index; render(); return; }
-  if (target.hasAttribute("data-notice-query")) { noticeState.date = notificationWindow.querySelector("#noticeDate").value; noticeState.level = notificationWindow.querySelector("#noticeLevel").value; noticeState.keyword = notificationWindow.querySelector("#noticeKeyword").value.trim(); renderNoticeWindow(); return; }
-  if (target.hasAttribute("data-notice-reset")) { Object.assign(noticeState, { date: "", level: "全部", keyword: "" }); renderNoticeWindow(); return; }
-  if (target.hasAttribute("data-notice-export")) { const data = [["时间", "类型", "订单层级", "资金账号", "订单编号", "反馈内容"], ...noticeRows().map(item => [item.time, item.event, item.orderLevel || "", item.account || "", item.order || "", item.rejectReason || item.summary])]; const csv = "\ufeff" + data.map(row => row.map(value => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n"); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); link.download = "消息通知.csv"; link.click(); URL.revokeObjectURL(link.href); }
-});
-
